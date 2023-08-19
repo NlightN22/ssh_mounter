@@ -4,6 +4,7 @@ from .logger import Logger
 import re
 import os
 import argparse
+import getpass
 
 runner = Runner()
 logger = Logger()
@@ -32,11 +33,13 @@ def input_host(message, pattern):
         host = input(message).strip()
     return host
 
-def input_path(message, pattern):
+def input_path(message, pattern, deafult_path = ''):
     path = input(message).strip()
+    if deafult_path and not path: path = deafult_path
     while not validate_input(path, pattern):
-        print("Invalid path. Please enter a valid path.")
+        print(f"Invalid path: {path}. Please enter a valid path.")
         path = input(message).strip()
+        if deafult_path and not path: path = deafult_path
     return path
 
 def validate_input(value, pattern=None):
@@ -105,6 +108,8 @@ def test_ssh_connection(args):
         logger.error("Error during test ssh connection. Please ensure ssh is installed and SSH keys are set up correctly.")
         exit(1)
 
+
+
 def validate_args(args, parser):
 
     if args.log_path:
@@ -113,6 +118,10 @@ def validate_args(args, parser):
             display_error_with_args("Invalid log path", args, parser)
             exit(1)
         init_logger(args.log_path)
+
+    if args.quiet_mode and args.create_remote:
+        display_error_with_args("Can't use simultaneously -c -q parameters", args, parser)
+        exit(1)
 
     if not args.username and not args.quiet_mode:
         args.username = input_username()
@@ -151,13 +160,6 @@ def validate_args(args, parser):
         remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
         logger.log(f"{remote_device} already mounted to {args.local_path}")
         exit(1)
-
-    if not args.ssh_key_path and not args.quiet_mode:
-        use_local_key = input("Do you have local SSH keyfile for connect without password or default public key? (yes/no): ").strip().lower()
-        if use_local_key == 'yes':
-            args.ssh_key_path = input_path(f"Enter local key file path (e.g. ~/.ssh/{args.username}): ", path_pattern)
-        else:
-            create_and_install_ssh_key(args)
     
 def display_error_with_args(error_message, args, parser):
     """
@@ -204,13 +206,37 @@ def is_path_mounted(local_path, remote_path):
         logger.error(f"Error checking mount status: {e}")
         exit(1)
 
+def input_remote_user_password(args):
+    remote_user_password = getpass.getpass(f'Input remote user {args.username} password length > 4: ')
+    while not remote_user_password or len(remote_user_password) < 5:
+        logger.error(f'You must input remote user {args.username} password length > 4')
+        remote_user_password = getpass.getpass(f'Input remote user {args.username} password length > 4: ')
+    return remote_user_password
+
+def create_remote_user(args):
+    default_admin = 'root'
+    remote_admin = input(f'Input remote admin username (default: {default_admin}): ').strip()
+    if not remote_admin: remote_admin = default_admin
+
+    if len(args.create_remote) < 5:
+        args.create_remote = input_remote_user_password(args)
+
+    if remote_admin == default_admin:
+        cmd = f'ssh {remote_admin}@{args.servername} \'useradd -m {args.username} && echo "{args.username}:{args.create_remote}" | chpasswd && exit \''
+    else:
+        cmd = f'ssh {remote_admin}@{args.servername} \'sudo useradd -m {args.username} && echo "{args.username}:{args.create_remote}" | sudo chpasswd && exit \''
+    try:
+        result_ssh = runner.run(cmd)
+        if result_ssh == 0:
+            logger.log(f'User {args.username} with password {args.create_remote} successfully created at {args.servername}')
+    except Exception as e:
+        logger.error("Error during creating remote user. Please ensure that credentials set up correctly.")
+        exit(1)
+
 def create_and_install_ssh_key(args):
     args.ssh_key_path = create_ssh_key(args)
     if args.ssh_key_path:
         install_key_to_server(args)
-        if not test_ssh_connection(args):
-            logger.error("Error during test ssh connection. Check connection or setup private and public key to remote server")
-            exit(1)
     
 def create_ssh_key(args):
     create_ssh_key = input("Would you like to create local SSH keyfile for connect without password? (yes/no, default yes): ").strip().lower()
@@ -291,7 +317,8 @@ def main():
             logger.error(f'Error: {package} is not installed. Please install it first. Example: apt install {package}')
             exit(1)
     
-    parser = argparse.ArgumentParser(description="SSHFS mount utility")
+    parser = argparse.ArgumentParser(description="SSHFS mount utility." + 
+                                     "\nBase usage: ssh-mounter -u username -c StrongUserPassword -s remote-server.com -r /home/username -m /mnt/local_path -l")
     parser.add_argument("-u", "--username", help="Username for SSH connection")
     parser.add_argument("-s", "--servername", help="Server hostname or IP address for SSH connection")
     parser.add_argument("-r", "--remote-path", help="Remote path for mounting")
@@ -302,10 +329,23 @@ def main():
                         nargs="?",
                         const="./ssh_mount_helper.log"
                         )
+    parser.add_argument("-c", "--create-remote", help="Create remote user in interactive mode. Input password for user with length > 4.")
     parser.add_argument("-q", "--quiet-mode", action="store_true", help="Quiet mode, disable interactive mode")
+    
 
     args = parser.parse_args()
     validate_args(args, parser)
+
+    if args.create_remote:
+       create_remote_user(args)
+
+    if not args.ssh_key_path and not args.quiet_mode:
+        default_ssh_key_path = '~/.ssh/id_rsa'
+        args.ssh_key_path = input_path("Enter local SSH key file path. File creates, if it does not existing " + 
+                                       f"(e.g. ~/.ssh/{args.username}, default: {default_ssh_key_path}): ", path_pattern, default_ssh_key_path)
+        if not os.path.exists(args.ssh_key_path):
+            logger.log(f'Local SSH key file {args.ssh_key_path} does not exist')
+            create_and_install_ssh_key(args)
 
     if not test_ssh_connection(args):
         if args.quiet_mode or args.ssh_key_path != '': 

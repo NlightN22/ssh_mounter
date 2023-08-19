@@ -1,6 +1,6 @@
 import subprocess
 import time
-from logger import Logger
+from .logger import Logger
 
 class Runner:
     def __init__(self, external_logger: Logger = ''):
