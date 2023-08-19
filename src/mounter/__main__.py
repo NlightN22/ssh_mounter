@@ -1,10 +1,9 @@
 #!/usr/bin/python3
-from system_runner import Runner
-from logger import Logger
+from .system_runner import Runner
+from .logger import Logger
 import re
 import os
 import argparse
-import subprocess
 
 runner = Runner()
 logger = Logger()
@@ -285,8 +284,7 @@ def check_mounted_path(args):
     return False
 
 
-if __name__ == "__main__":
-
+def main():
     required_packages = [ 'ssh', 'ssh-keygen', 'sshfs', 'ssh-copy-id']
     for package in required_packages:
         if not is_package_installed(package):
@@ -318,3 +316,5 @@ if __name__ == "__main__":
     if not check_mounted_path(args):
         mount_sshfs(args)
     
+if __name__ == "__main__":
+    main()
