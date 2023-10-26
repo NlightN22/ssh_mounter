@@ -52,7 +52,7 @@ def validate_input(value, pattern=None):
     return True
 
 def check_and_create_directory(path):
-    if not os.path.exists(path):
+    if not os.path.exists(os.path.expanduser(path)):
         response = input(f"Directory '{path}' does not exist. Would you like to create it? (yes/no): ").strip().lower()
         if response == 'yes':
             try:
@@ -343,7 +343,7 @@ def main():
         default_ssh_key_path = '~/.ssh/id_rsa'
         args.ssh_key_path = input_path("Enter local SSH key file path. File creates, if it does not existing " + 
                                        f"(e.g. ~/.ssh/{args.username}, default: {default_ssh_key_path}): ", path_pattern, default_ssh_key_path)
-        if not os.path.exists(args.ssh_key_path):
+        if not os.path.exists(os.path.expanduser(args.ssh_key_path)):
             logger.log(f'Local SSH key file {args.ssh_key_path} does not exist')
             create_and_install_ssh_key(args)
 
