@@ -16,14 +16,27 @@ It's create remote user at remote server. Create SSH certificate file in interac
 ```bash
 ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -l
 ```
+## Already created user and default certificate:
+```bash
+ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -l
+```
 ## Already created user and certificate:
 ```bash
-ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -k ~/.ssh/id_rsa -l
+ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -k ~/.ssh/certificate -l
 ```
 ## Full interactive mode:
 ```bash
 ssh-mounter
 ```
+## If you want to install service wich automatically run this script:
+```bash
+ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -l -i
+```
+## If you want to remove service wich automatically run this script:
+```bash
+ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_path -l -d
+```
 More information you can see by command `ssh-mounter -h`
 
 [//]: # (build command: rm dist -r -Force ; py -m build ; py -m twine upload --repository testpypi dist/*)
+[//]: # (pipx upgrade -i https://test.pypi.org/simple/ ssh-mounter)

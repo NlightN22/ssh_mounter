@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 from .system_runner import Runner
 from .logger import Logger
+from .sytemd_service_installer import ServiceInstaller
 import re
 import os
+import time
 import argparse
 import getpass
 
@@ -11,7 +13,7 @@ logger = Logger()
 
 path_pattern = r"^((~?/?|(\./)?)([a-zA-Z0-9_.\-]+/?)+)$"
 
-scriptname="ssh_mount_helper"
+scriptname="ssh_mounter"
 
 def init_logger(log_path):
     global logger
@@ -42,6 +44,15 @@ def input_path(message, pattern, deafult_path = ''):
         if deafult_path and not path: path = deafult_path
     return path
 
+def input_number(message, default_number = ''):
+    number = input(message).strip()
+    if default_number and not number: number = default_number
+    while not number.isdigit():
+        print(f"Invalid number: {number}. Please enter a valid path.")
+        number = input(message).strip()
+        if default_number and not number: number = default_number
+    return number
+
 def validate_input(value, pattern=None):
     if not value:
         return False
@@ -51,19 +62,19 @@ def validate_input(value, pattern=None):
 
     return True
 
-def check_and_create_directory(path):
-    if not os.path.exists(os.path.expanduser(path)):
-        response = input(f"Directory '{path}' does not exist. Would you like to create it? (yes/no): ").strip().lower()
+def check_and_create_directory(args):
+    if not os.path.exists(os.path.expanduser(args.local_path)) and not args.quiet_mode:
+        response = input(f"Directory '{args.local_path}' does not exist. Would you like to create it? (yes/no): ").strip().lower()
         if response == 'yes':
             try:
-                os.makedirs(path)
-                logger.log(f"Directory '{path}' created successfully!")
+                os.makedirs(args.local_path)
+                logger.log(f"Directory '{args.local_path}' created successfully!")
             except Exception as e:
-                logger.error(f"Error creating directory '{path}': {e}")
+                logger.error(f"Error creating directory '{args.local_path}': {e}")
                 exit(1)
-        else:
-            logger.error(f"Local mount directory '{path}' was not created.")
-            exit(1)
+    if not os.path.exists(os.path.expanduser(args.local_path)):
+        logger.error(f"Local mount directory '{args.local_path}' was not created.")
+        exit(1)
 
 def is_package_installed(package):
     try:
@@ -112,6 +123,18 @@ def test_ssh_connection(args):
 
 def validate_args(args, parser):
 
+    if args.install_service and args.delete_service:
+        display_error_with_args("Can't use simultaneously -i -d parameters", args, parser)
+        exit(1)
+
+    if args.install_service:
+        if not args.period.isdigit(): 
+            if not args.quiet_mode:
+                input_number('Enter correct update period for service in seconds, e.g. 60')
+            else:
+                display_error_with_args("Invalid period", args, parser)
+                exit(1)
+
     if args.log_path:
         validate = validate_input(args.log_path, path_pattern)
         if not validate:
@@ -154,12 +177,7 @@ def validate_args(args, parser):
         if not validate:
             display_error_with_args("Invalid local path", args, parser)
             exit(1)
-    check_and_create_directory(args.local_path)
 
-    if check_mounted_path(args):
-        remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
-        logger.log(f"{remote_device} already mounted to {args.local_path}")
-        exit(1)
     
 def display_error_with_args(error_message, args, parser):
     """
@@ -176,7 +194,7 @@ def display_error_with_args(error_message, args, parser):
         print('')
         parser.print_help()
 
-def is_path_mounted(local_path, remote_path):
+def is_path_mounted(local_path):
     """
     Check if at mount path somthing already mounted
 
@@ -185,9 +203,7 @@ def is_path_mounted(local_path, remote_path):
         remote_path (str): remote device
     
     Returns:
-        already_mounted: local mount point and remote is True
-        busy: local mount point busy by another device
-        not_mounted: local mount point free for mount
+        mounted_device or False if it is not busy
     """
     try:
         with open("/proc/mounts", "r") as f:
@@ -197,11 +213,8 @@ def is_path_mounted(local_path, remote_path):
             mounted_path = parts[1]
             mounted_device = parts[0]
             if mounted_path == local_path:
-                if remote_path in mounted_device:
-                    return 'already_mounted'
-                else:
-                    return 'busy'
-        return 'not_mounted'
+                return mounted_device
+        return False
     except Exception as e:
         logger.error(f"Error checking mount status: {e}")
         exit(1)
@@ -300,17 +313,45 @@ def install_key_to_server(args):
 
 def check_mounted_path(args):
     remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
-    result = is_path_mounted(args.local_path, remote_device)
-
-    if result == 'busy':
-        logger.error(f"Something already mounted to {args.local_path}")
-        exit(1)
-    elif result == 'already_mounted':
+    result = is_path_mounted(args.local_path)
+    if not result: return False
+    if remote_device in result:
         return True
-    return False
+    elif result:
+        logger.error(f"{result} already mounted to {args.local_path}")
+        exit(1)
 
+def install_or_remove_service(args):
+    replaced_slash = args.remote_path.replace('/', '-')
+    whithout_first = replaced_slash[1:]
+    service_name = f'{whithout_first}@ssh-mounter'
+    installer = ServiceInstaller(quiet_mode=args.quiet_mode,external_logger=logger)
+
+    if args.install_service:
+        # current_path = os.path.dirname(os.path.abspath(__file__)) # todo delete
+        current_path = os.path.expanduser('~/.local/bin/ssh-mounter')
+        script_path = (current_path + f" -u {args.username} -s {args.servername}" +
+                    f" -r {args.remote_path} -m {args.local_path} -l -p {args.period} -q -k {args.ssh_key_path}")
+        logger.log('Prepare service...')
+        service_content = installer.prepare(
+            service_name=service_name,
+            script_path=script_path,
+            description=f'Mount remote path {args.remote_path} to local {args.local_path}',
+            start_after='network.target auditd.service',
+            restart_always=True
+        )
+        if installer.install(service_name, service_content):
+            logger.log(f'Service {service_name}.service installed successfully')
+            installer.start(service_name)
+
+    if args.delete_service:
+        if installer.remove(service_name):
+            logger.log(f'Service {service_name}.service removed successfully')
 
 def main():
+    default_ssh_key_path = '~/.ssh/id_rsa'
+    default_log_path = f'/var/log/{scriptname}.log'
+
     required_packages = [ 'ssh', 'ssh-keygen', 'sshfs', 'ssh-copy-id']
     for package in required_packages:
         if not is_package_installed(package):
@@ -323,26 +364,56 @@ def main():
     parser.add_argument("-s", "--servername", help="Server hostname or IP address for SSH connection")
     parser.add_argument("-r", "--remote-path", help="Remote path for mounting")
     parser.add_argument("-m", "--local-path", help="Local path for mounting")
-    parser.add_argument("-k", "--ssh-key-path", help="SSH key path for connecting")
+    parser.add_argument("-k", "--ssh-key-path", 
+                        help=f'SSH key path for connecting, default value "{default_ssh_key_path}"',
+                        nargs='?',
+                        default=default_ssh_key_path,
+                        const=default_ssh_key_path
+                        )
     parser.add_argument("-l", "--log-path", 
-                        help='Log path, e.g. /var/log/ssh_mount_helper.log, default value "./ssh_mount_helper.log"',
+                        help=f'Enable log and set log path, e.g. /var/log/ssh_mount_helper.log, default path value "{default_log_path}"',
                         nargs="?",
-                        const="./ssh_mount_helper.log"
+                        const=default_log_path
                         )
     parser.add_argument("-c", "--create-remote", help="Create remote user in interactive mode. Input password for user with length > 4.")
     parser.add_argument("-q", "--quiet-mode", action="store_true", help="Quiet mode, disable interactive mode")
+    parser.add_argument("-i", "--install-service", action="store_true", help="Install service for automounting remote path throught this script")
+    parser.add_argument("-d", "--delete-service", action="store_true", help="Delete service for automounting remote path throught this script")
+    parser.add_argument("-p", "--period", 
+                        nargs="?",
+                        default="60",
+                        const="60",
+                        help="Service check period in seconds, default 60 seconds")
     
-
     args = parser.parse_args()
     validate_args(args, parser)
 
+    service_install_params = True if args.install_service or args.delete_service else False
+
+    if args.period and not service_install_params:
+        period = float(args.period)
+        while True:
+            if not check_mounted_path(args):
+                mount_sshfs(args)
+            time.sleep(period)
+
+    if check_mounted_path(args):
+        if service_install_params:
+            install_or_remove_service(args)
+            exit(0)
+        else:
+            remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
+            logger.log(f"{remote_device} already mounted to {args.local_path}")
+            exit(1)
+
+    check_and_create_directory(args)
+
     if args.create_remote:
-       create_remote_user(args)
+        create_remote_user(args)
 
     if not args.ssh_key_path and not args.quiet_mode:
-        default_ssh_key_path = '~/.ssh/id_rsa'
         args.ssh_key_path = input_path("Enter local SSH key file path. File creates, if it does not existing " + 
-                                       f"(e.g. ~/.ssh/{args.username}, default: {default_ssh_key_path}): ", path_pattern, default_ssh_key_path)
+                                    f"(e.g. ~/.ssh/{args.username}, default: {default_ssh_key_path}): ", path_pattern, default_ssh_key_path)
         if not os.path.exists(os.path.expanduser(args.ssh_key_path)):
             logger.log(f'Local SSH key file {args.ssh_key_path} does not exist')
             create_and_install_ssh_key(args)
@@ -356,5 +427,8 @@ def main():
     if not check_mounted_path(args):
         mount_sshfs(args)
     
+    if args.install_service:
+        install_or_remove_service(args)
+
 if __name__ == "__main__":
     main()

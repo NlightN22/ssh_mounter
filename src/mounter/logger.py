@@ -3,9 +3,12 @@ import logging
 import os
 
 class Logger():
-    def __init__(self, log_path=''):
-        __log_formatter = logging.Formatter('%(levelname)s %(asctime)s :: %(message)s', 
+    def __init__(self, log_path='', timestamp=True):
+        if timestamp:
+            __log_formatter = logging.Formatter('%(levelname)s %(asctime)s :: %(message)s', 
                                         datefmt='%d/%m/%Y %H:%M:%S')
+        else:
+            __log_formatter = logging.Formatter('%(levelname)s :: %(message)s')
         #Setup Stream Handler (i.e. console)
         __stream_handler = logging.StreamHandler(sys.stdout)
         __stream_handler.setFormatter(__log_formatter)
@@ -15,7 +18,7 @@ class Logger():
         self.__logger = logging.getLogger('root')
         self.__logger.setLevel(logging.INFO)
 
-        if log_path and not self.handler_exists(log_path):
+        if log_path and not self.file_handler_exists(log_path):
             #Setup File handler
             __file_handler = logging.FileHandler(log_path)
             __file_handler.setFormatter(__log_formatter)
@@ -25,8 +28,18 @@ class Logger():
         if not self.stream_handler_exists():
             self.__logger.addHandler(__stream_handler)
 
+    def set_console_formatter(self, timestamp=True):
+        if timestamp:
+            new_formatter = logging.Formatter('%(levelname)s %(asctime)s :: %(message)s', 
+                                        datefmt='%d/%m/%Y %H:%M:%S')
+        else:
+            new_formatter = logging.Formatter('%(levelname)s :: %(message)s')
 
-    def handler_exists(self, log_path):
+        for handler in self.__logger.handlers:
+            if isinstance(handler, logging.StreamHandler):
+                handler.setFormatter(new_formatter)
+
+    def file_handler_exists(self, log_path):
         for handler in self.__logger.handlers:
             if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_path):
                 return True

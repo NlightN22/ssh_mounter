@@ -9,7 +9,7 @@ class Runner:
         else:
             self.__logger = external_logger
 
-    def run(self, bashCommand: str, exclude_errors: list = [], silent = False):
+    def run(self, bashCommand: str, exclude_errors: list = [], silent = False, exit_on_err: bool = False):
         """ Run commands in shell
         Get 
             command: str, 
@@ -43,4 +43,5 @@ class Runner:
         return_code = process.returncode
 
         if not silent: self.__logger.log("Return code {}".format(return_code))
+        if exit_on_err and return_code != 0: exit(1)
         return return_code
