@@ -128,7 +128,7 @@ def validate_args(args, parser):
         exit(1)
 
     if args.install_service:
-        if not args.period.isdigit(): 
+        if args.period and not args.period.isdigit(): 
             if not args.quiet_mode:
                 input_number('Enter correct update period for service in seconds, e.g. 60')
             else:
@@ -321,7 +321,8 @@ def check_mounted_path(args):
         logger.error(f"{result} already mounted to {args.local_path}")
         exit(1)
 
-def install_or_remove_service(args):
+def install_or_remove_service(args, default_service_period):
+    period = args.period if args.period is not None else default_service_period
     replaced_slash = args.remote_path.replace('/', '-')
     whithout_first = replaced_slash[1:]
     service_name = f'{whithout_first}@ssh-mounter'
@@ -329,16 +330,17 @@ def install_or_remove_service(args):
 
     if args.install_service:
         # current_path = os.path.dirname(os.path.abspath(__file__)) # todo delete
-        current_path = os.path.expanduser('~/.local/bin/ssh-mounter')
+        # current_path = os.path.expanduser('~/.local/bin/ssh-mounter') # todo delete
+        current_path = 'ssh-mounter'
         script_path = (current_path + f" -u {args.username} -s {args.servername}" +
-                    f" -r {args.remote_path} -m {args.local_path} -l -p {args.period} -q -k {args.ssh_key_path}")
+                    f" -r {args.remote_path} -m {args.local_path} -l -p {period} -q -k {args.ssh_key_path}")
         logger.log('Prepare service...')
         service_content = installer.prepare(
             service_name=service_name,
             script_path=script_path,
             description=f'Mount remote path {args.remote_path} to local {args.local_path}',
             start_after='network.target auditd.service',
-            restart_always=True
+            restart_always=True,
         )
         if installer.install(service_name, service_content):
             logger.log(f'Service {service_name}.service installed successfully')
@@ -351,6 +353,7 @@ def install_or_remove_service(args):
 def main():
     default_ssh_key_path = '~/.ssh/id_rsa'
     default_log_path = f'/var/log/{scriptname}.log'
+    default_service_period = 60
 
     required_packages = [ 'ssh', 'ssh-keygen', 'sshfs', 'ssh-copy-id']
     for package in required_packages:
@@ -381,9 +384,8 @@ def main():
     parser.add_argument("-d", "--delete-service", action="store_true", help="Delete service for automounting remote path throught this script")
     parser.add_argument("-p", "--period", 
                         nargs="?",
-                        default="60",
-                        const="60",
-                        help="Service check period in seconds, default 60 seconds")
+                        const=default_service_period,
+                        help=f"Service check period in seconds, default {default_service_period} seconds")
     
     args = parser.parse_args()
     validate_args(args, parser)
@@ -399,7 +401,7 @@ def main():
 
     if check_mounted_path(args):
         if service_install_params:
-            install_or_remove_service(args)
+            install_or_remove_service(args, default_service_period)
             exit(0)
         else:
             remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
@@ -428,7 +430,7 @@ def main():
         mount_sshfs(args)
     
     if args.install_service:
-        install_or_remove_service(args)
+        install_or_remove_service(args, default_service_period)
 
 if __name__ == "__main__":
     main()

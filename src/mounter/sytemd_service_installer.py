@@ -58,7 +58,8 @@ class ServiceInstaller():
             script_path: str,
             description: str,
             start_after: str ='network.target',
-            restart_always: bool =False):
+            restart_always: bool =False,
+            check_path: bool =False):
         '''
         Prepare service content for install.
         Args:
@@ -70,7 +71,7 @@ class ServiceInstaller():
         Returns:
             str: Prepared multistring content
         '''
-        self._validate_path(script_path)
+        if check_path: self._validate_path(script_path)
         restart_line = "Restart=always" if restart_always else ""
 
         service_content = f"""[Unit]
@@ -126,7 +127,7 @@ Alias={service_name}.service
         self.__runner.run(reload_cmd, exit_on_err=True)
         enable_cmd = f"systemctl enable {service_name}"
         self.__logger.log(f'Enable {service_name} daemon...')
-        self.__runner.run(enable_cmd, exit_on_err=True)
+        self.__runner.run(enable_cmd, exit_on_err=False)
         return True
     
     def start(self, service_name:str):

@@ -3,6 +3,8 @@ Script 'ssh-mounter' for automate creation and connection remote user folder to 
 # Installation from test.pypi.org
 ```bash
 pipx install -i https://test.pypi.org/simple/ ssh-mounter
+# or
+pip3 install -i https://test.pypi.org/simple/ ssh-mounter
 ```
 [//]: # (todo add to main pypi.org repo)
 
@@ -40,3 +42,5 @@ More information you can see by command `ssh-mounter -h`
 
 [//]: # (build command: rm dist -r -Force ; py -m build ; py -m twine upload --repository testpypi dist/*)
 [//]: # (pipx upgrade -i https://test.pypi.org/simple/ ssh-mounter)
+[//]: # (pip3 install --upgrade -i https://test.pypi.org/simple/ ssh-mounter)
+
