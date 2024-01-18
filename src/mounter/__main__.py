@@ -399,14 +399,14 @@ def main():
                 mount_sshfs(args)
             time.sleep(period)
 
+    if service_install_params:
+        install_or_remove_service(args, default_service_period)
+        exit(0)
+
     if check_mounted_path(args):
-        if service_install_params:
-            install_or_remove_service(args, default_service_period)
-            exit(0)
-        else:
-            remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
-            logger.log(f"{remote_device} already mounted to {args.local_path}")
-            exit(1)
+        remote_device = f'{args.username}@{args.servername}:{args.remote_path}'
+        logger.log(f"{remote_device} already mounted to {args.local_path}")
+        exit(1)
 
     check_and_create_directory(args)
 

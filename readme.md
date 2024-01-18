@@ -40,7 +40,7 @@ ssh-mounter -u username -s remote-server.com -r /home/username -m /mnt/local_pat
 ```
 More information you can see by command `ssh-mounter -h`
 
-[//]: # (build command: rm dist -r -Force ; py -m build ; py -m twine upload --repository testpypi dist/*)
+[//]: # (rm dist -r -Force ; py -m build ; py -m twine upload --repository testpypi dist/* --username $env:PYPI_NAME --password $env:PYPI_TOKEN)
 [//]: # (pipx upgrade -i https://test.pypi.org/simple/ ssh-mounter)
 [//]: # (pip3 install --upgrade -i https://test.pypi.org/simple/ ssh-mounter)
 
